@@ -1,0 +1,31 @@
+﻿# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Local configuration and secrets
+.env
+.env.*
+config/local*.json
+config/secrets*
+
+# Minecraft test server - never commit
+test-server/
+client-only-mods/
+
+# MCSync runtime data
+data/
+snapshots/
+logs/
+*.log
+
+# Operating system / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+config/secrets.json
+MCSyncData/
