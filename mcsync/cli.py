@@ -9,7 +9,20 @@ from pathlib import Path
 from mcsync.config import MCSyncConfig
 from mcsync.server import ServerManager, ServerError
 from mcsync.peer_monitor import inspect_all_peers
-from mcsync.secrets import SecretError
+from mcsync.peer_api import PeerAPIError
+from mcsync.control_api import (
+    ControlAPIError,
+    LocalManagerUnavailable,
+    request_local_control,
+)
+from mcsync.host_manager import (
+    HostManager,
+    HostManagerError,
+)
+from mcsync.secrets import (
+    SecretError,
+    load_local_control_token,
+)
 from mcsync.snapshots import list_snapshots, SnapshotError
 from mcsync.replication import list_verified_replicas
 
@@ -49,7 +62,10 @@ def print_peer_health(results):
 
         print(f"Last observed: {peer.observed_at_utc}")
 
+
 def print_generations(title, generations):
+    """Display verified snapshots or replicas."""
+
     print()
     print(title)
     print("=" * len(title))
@@ -77,6 +93,19 @@ def print_generations(title, generations):
 
     print()
     print(f"Total verified generations: {len(generations)}")
+
+
+def send_local_command(config, action):
+    """Send a command to the persistent local HostManager."""
+
+    token = load_local_control_token(config.secrets_file)
+
+    return request_local_control(
+        port=HostManager.CONTROL_PORT,
+        token=token,
+        action=action,
+    )
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -108,34 +137,55 @@ def main():
 
     try:
         config = MCSyncConfig.from_file(args.config)
-        manager = ServerManager(config)
 
         if args.command == "start":
-            server = manager.start()
-            print(f"Minecraft process started. PID: {server.pid}")
-            print(f"Log: {server.log_path}")
+            manager = ServerManager(config)
+            host_manager = HostManager(manager)
 
+            print("Starting persistent MCSync HostManager...")
+            print("The manager will remain running until Minecraft is stopped.")
+            print("Use another terminal to run status, save, or stop.")
+            print("Press Ctrl+C to request a graceful shutdown.\n")
+
+            host_manager.run()
+
+            print("MCSync HostManager stopped.")
         elif args.command == "status":
-            print(json.dumps(manager.status(), indent=2))
+            try:
+                result = send_local_command(config, "status")
+                result["manager_state"] = "MANAGER_RUNNING"
+            except LocalManagerUnavailable:
+                result = {
+                    "manager_state": "MANAGER_STOPPED",
+                    "minecraft_state": "UNKNOWN",
+                    "message": (
+                        "The local HostManager is not running. "
+                        "Minecraft state cannot be confirmed."
+                    ),
+                }
+
+            print(json.dumps(result, indent=2))
 
         elif args.command == "stop":
-            manager.stop()
-            print("Minecraft stopped successfully.")
+            result = send_local_command(config, "stop")
+            print(json.dumps(result, indent=2))
+            print("Graceful shutdown requested.")
 
         elif args.command == "save":
-            manager.send_command("save-all flush")
+            result = send_local_command(config, "save")
+            print(json.dumps(result, indent=2))
             print("Save command sent.")
 
         elif args.command == "peers":
+            manager = ServerManager(config)
             results = inspect_all_peers(manager)
             print_peer_health(results)
-        
+
         elif args.command == "snapshots":
             snapshots = list_snapshots(
                 config.snapshots_directory,
                 expected_world_id=config.world_id,
             )
-
             print_generations("Local Snapshots", snapshots)
 
         elif args.command == "replicas":
@@ -143,13 +193,15 @@ def main():
                 config.replication_directory,
                 expected_world_id=config.world_id,
             )
-
             print_generations("Verified Replicas", replicas)
 
     except (
         ServerError,
         SecretError,
         SnapshotError,
+        PeerAPIError,
+        ControlAPIError,
+        HostManagerError,
         ValueError,
         FileNotFoundError,
         OSError,
