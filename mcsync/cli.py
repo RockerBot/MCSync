@@ -101,7 +101,7 @@ def send_local_command(config, action):
     token = load_local_control_token(config.secrets_file)
 
     return request_local_control(
-        port=HostManager.CONTROL_PORT,
+        port=HostManager.control_port,
         token=token,
         action=action,
     )

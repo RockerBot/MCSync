@@ -10,7 +10,7 @@
     },
     {
       "peer_id": "peer-b",
-      "host": "peer-b"
+      "host": "127.0.0.2"
     },
     {
       "peer_id": "peer-c",

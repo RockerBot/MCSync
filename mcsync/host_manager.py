@@ -18,10 +18,9 @@ class HostManagerError(RuntimeError):
 class HostManager:
     """Keeps Minecraft and its ownership lock managed by one process."""
 
-    CONTROL_PORT = 8766
-
     def __init__(self, manager: ServerManager):
         self.manager = manager
+        self.control_port = manager.config.control_port
         self.stop_requested = threading.Event()
 
         self.control_server: LocalControlServer | None = None
@@ -39,7 +38,7 @@ class HostManager:
             manager=self.manager,
             secrets_file=self.manager.config.secrets_file,
             on_stop_requested=self.request_stop,
-            port=self.CONTROL_PORT,
+            port=self.control_port,
         )
 
         self.peer_server = PeerStatusServer(self.manager)
@@ -139,7 +138,7 @@ class HostManager:
             print("MCSync APIs started.")
             print(
                 f"Local control API: "
-                f"http://127.0.0.1:{self.CONTROL_PORT}"
+                f"http://127.0.0.1:{self.control_port}"
             )
             print(f"Peer status API: {self.peer_server.address}")
 

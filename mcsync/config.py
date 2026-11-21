@@ -31,6 +31,7 @@ class MCSyncConfig:
     loader_version: str
 
     checkpoint_interval_minutes: int = 10
+    control_port: int = 8766
     peer_registry: PeerRegistry | None = None
     secrets_file: Path | None = None
 
@@ -123,6 +124,17 @@ class MCSyncConfig:
                 "checkpoint_interval_minutes must be at least 1"
             )
 
+        control_port = data.get("control_port", 8766)
+
+        if (
+            not isinstance(control_port, int)
+            or isinstance(control_port, bool)
+            or not 1 <= control_port <= 65535
+        ):
+            raise ValueError(
+                "control_port must be an integer between 1 and 65535"
+            )
+
         registry_path = base_directory / "peers.json"
 
         peer_registry = (
@@ -145,6 +157,7 @@ class MCSyncConfig:
             loader=str(data["loader"]),
             loader_version=str(data["loader_version"]),
             checkpoint_interval_minutes=interval,
+            control_port=control_port,
             peer_registry=peer_registry,
             secrets_file=secrets_file,
         )
