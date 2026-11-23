@@ -8,8 +8,10 @@ __pycache__/
 # Local configuration and secrets
 .env
 .env.*
-config/local*.json
-config/secrets*
+config/local.json
+config/peer-*.json
+config/peers.json
+config/secrets*.json
 
 # Minecraft test server - never commit
 test-server/
@@ -20,12 +22,10 @@ data/
 snapshots/
 logs/
 *.log
+MCSyncData/
 
 # Operating system / editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-config/secrets.json
-MCSyncData/

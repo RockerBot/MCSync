@@ -6,15 +6,11 @@
   "peers": [
     {
       "peer_id": "peer-a",
-      "host": "127.0.0.1"
+      "host": "peer-a.example.invalid"
     },
     {
       "peer_id": "peer-b",
-      "host": "127.0.0.2"
-    },
-    {
-      "peer_id": "peer-c",
-      "host": "peer-c"
+      "host": "peer-b.example.invalid"
     }
   ]
 }
