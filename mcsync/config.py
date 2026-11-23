@@ -21,6 +21,7 @@ class MCSyncConfig:
     world_directory: Path
     snapshots_directory: Path
     replication_directory: Path
+    incoming_directory: Path
     runtime_directory: Path
 
     java_executable: Path
@@ -94,6 +95,12 @@ class MCSyncConfig:
             else (base_directory.parent / "MCSyncData" / "replication").resolve()
         )
 
+        incoming_directory = (
+            resolve_path(data["incoming_directory"])
+            if data.get("incoming_directory")
+            else (replication_directory.parent / "incoming").resolve()
+        )
+
         secrets_file = (
             resolve_path(data["secrets_file"])
             if data.get("secrets_file")
@@ -150,6 +157,7 @@ class MCSyncConfig:
             world_directory=resolve_path(data["world_directory"]),
             snapshots_directory=resolve_path(data["snapshots_directory"]),
             replication_directory=replication_directory,
+            incoming_directory=incoming_directory,
             runtime_directory=runtime_directory,
             java_executable=resolve_path(data["java_executable"]),
             server_start_command=tuple(command),
@@ -202,6 +210,9 @@ class MCSyncConfig:
         if not self.replication_directory.is_absolute():
             raise ValueError("Replication directory must be absolute")
 
+        if not self.incoming_directory.is_absolute():
+            raise ValueError("Incoming directory must be absolute")
+
         if self.secrets_file is not None and not self.secrets_file.is_absolute():
             raise ValueError("Secrets file path must be absolute")
 
@@ -223,6 +234,16 @@ class MCSyncConfig:
                 raise ValueError(
                     f"Replication directory cannot overlap the {name} directory"
                 )
+
+            if paths_overlap(self.incoming_directory, directory):
+                raise ValueError(
+                    f"Incoming directory cannot overlap the {name} directory"
+                )
+
+        if paths_overlap(self.incoming_directory, self.replication_directory):
+            raise ValueError(
+                "Incoming and replication directories must not overlap"
+            )
 
         if self.peer_registry is not None:
             self.peer_registry.validate_local_peer(

@@ -246,3 +246,119 @@ def get_latest_verified_replica(
     )
 
     return replicas[-1] if replicas else None
+
+def import_incoming_snapshots(
+    incoming_directory: Path,
+    replication_directory: Path,
+    expected_world_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Import verified snapshots from an untrusted incoming directory.
+
+    Incoming files are never modified or deleted. Each valid generation is
+    independently verified and published through publish_snapshot().
+    Incomplete, corrupt, or conflicting generations are reported as rejected.
+    """
+
+    incoming_directory = Path(incoming_directory)
+    replication_directory = Path(replication_directory)
+
+    if incoming_directory.is_symlink():
+        raise SnapshotError(
+            "Incoming directory cannot be a symbolic link"
+        )
+
+    if replication_directory.is_symlink():
+        raise SnapshotError(
+            "Replication directory cannot be a symbolic link"
+        )
+
+    # A missing incoming directory is normal before the first transfer.
+    if not incoming_directory.exists():
+        return []
+
+    if not incoming_directory.is_dir():
+        raise SnapshotError(
+            f"Incoming path is not a directory: {incoming_directory}"
+        )
+
+    incoming_directory = incoming_directory.resolve()
+    replication_directory = replication_directory.resolve()
+
+    if (
+        incoming_directory == replication_directory
+        or incoming_directory.is_relative_to(replication_directory)
+        or replication_directory.is_relative_to(incoming_directory)
+    ):
+        raise SnapshotError(
+            "Incoming and replication directories must not contain one another"
+        )
+
+    results = []
+
+    for incoming_snapshot in sorted(incoming_directory.iterdir()):
+        if not incoming_snapshot.is_dir():
+            continue
+
+        if incoming_snapshot.is_symlink():
+            continue
+
+        match = _GENERATION_PATTERN.fullmatch(incoming_snapshot.name)
+
+        # Ignore staging folders and unrelated files/directories.
+        if not match:
+            continue
+
+        result = {
+            "generation": incoming_snapshot.name,
+            "status": "REJECTED",
+            "path": None,
+            "error": None,
+        }
+
+        try:
+            # Verify the incoming copy before attempting publication.
+            incoming_metadata = verify_replica(
+                incoming_snapshot,
+                expected_world_id,
+            )
+
+            destination = (
+                replication_directory / incoming_snapshot.name
+            )
+
+            if destination.exists():
+                existing_metadata = verify_replica(
+                    destination,
+                    incoming_metadata["world_id"],
+                )
+
+                if (
+                    existing_metadata["manifest_sha256"]
+                    == incoming_metadata["manifest_sha256"]
+                ):
+                    result["status"] = "ALREADY_PRESENT"
+                    result["path"] = destination
+                    results.append(result)
+                    continue
+
+            published = publish_snapshot(
+                incoming_snapshot,
+                replication_directory,
+                expected_world_id,
+            )
+
+            result["status"] = "IMPORTED"
+            result["path"] = published
+
+        except (
+            SnapshotError,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as exc:
+            result["error"] = str(exc)
+
+        results.append(result)
+
+    return results

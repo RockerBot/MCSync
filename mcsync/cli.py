@@ -24,7 +24,10 @@ from mcsync.secrets import (
     load_local_control_token,
 )
 from mcsync.snapshots import list_snapshots, SnapshotError
-from mcsync.replication import list_verified_replicas
+from mcsync.replication import (
+    list_verified_replicas,
+    import_incoming_snapshots,
+)
 
 
 def print_peer_health(results):
@@ -101,7 +104,7 @@ def send_local_command(config, action):
     token = load_local_control_token(config.secrets_file)
 
     return request_local_control(
-        port=HostManager.control_port,
+        port=config.control_port,
         token=token,
         action=action,
     )
@@ -129,6 +132,7 @@ def main():
             "peers",
             "snapshots",
             "replicas",
+            "import",
         ],
         help="Command to execute",
     )
@@ -194,6 +198,49 @@ def main():
                 expected_world_id=config.world_id,
             )
             print_generations("Verified Replicas", replicas)
+
+        elif args.command == "import":
+            results = import_incoming_snapshots(
+                config.incoming_directory,
+                config.replication_directory,
+                expected_world_id=config.world_id,
+            )
+
+            print("\nIncoming Snapshot Import")
+            print("========================")
+
+            if not results:
+                print("No incoming generation folders found.")
+            else:
+                for result in results:
+                    print()
+                    print(f"Generation: {result['generation']}")
+                    print(f"Status:     {result['status']}")
+
+                    if result["path"] is not None:
+                        print(f"Path:       {result['path']}")
+
+                    if result["error"]:
+                        print(f"Error:      {result['error']}")
+
+                imported = sum(
+                    result["status"] == "IMPORTED"
+                    for result in results
+                )
+                already_present = sum(
+                    result["status"] == "ALREADY_PRESENT"
+                    for result in results
+                )
+                rejected = sum(
+                    result["status"] == "REJECTED"
+                    for result in results
+                )
+
+                print("\nImport Summary")
+                print("--------------")
+                print(f"Imported:        {imported}")
+                print(f"Already present: {already_present}")
+                print(f"Rejected:        {rejected}")
 
     except (
         ServerError,
