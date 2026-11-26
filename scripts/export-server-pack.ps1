@@ -1,19 +1,22 @@
 
 param(
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+    [string]$ConfigFile = "$(Split-Path -Parent $PSScriptRoot)\config\setup.json"
 )
+
+$Config = Get-Content $ConfigFile | ConvertFrom-Json
 
 $ErrorActionPreference = "Stop"
 
 # Resolve the repository relative to this script.
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$ServerRoot = Join-Path $ProjectRoot "test-server"
+$ServerRoot = Join-Path $ProjectRoot $Config.server_dir
 
 if (-not $OutputDirectory) {
     $OutputDirectory = Join-Path (Split-Path -Parent $ProjectRoot) "MCSync-ServerPack"
 }
 
-$PackName = "MCSync-ServerPack-MC-1.21.1-NeoForge-21.1.252"
+$PackName = $Config.pack_name
 $ZipPath = Join-Path $OutputDirectory "$PackName.zip"
 $HashPath = "$ZipPath.sha256"
 
@@ -35,6 +38,7 @@ Write-Host "`nMCSync Server Pack Export" -ForegroundColor Cyan
 Write-Host "Project: $ProjectRoot"
 Write-Host "Server:  $ServerRoot"
 Write-Host "Output:  $OutputDirectory"
+Write-Host "Config:  $ConfigFile"
 
 if (-not (Test-Path $ServerRoot -PathType Container)) {
     throw "Server directory not found: $ServerRoot"

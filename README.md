@@ -13,9 +13,15 @@ python -m unittest discover -v
 ```
 
 
+
+
+
 ## What the snapshot should have
 
 - mods
 - world data
 - run.bat
 - eula.txt
+- ops.json
+- server.properties
+- user_jvm_args.txt

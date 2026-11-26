@@ -1,3 +1,8 @@
+param(
+    [string]$ConfigFile = "$(Split-Path -Parent $PSScriptRoot)\config\setup.json"
+)
+
+$Config = Get-Content $ConfigFile | ConvertFrom-Json
 
 $ErrorActionPreference = "Stop"
 
@@ -5,14 +10,14 @@ $ErrorActionPreference = "Stop"
 # MCSync test server configuration
 # ==========================================
 
-$ProjectRoot = "D:\DATA\GITHUB PROJECTS\MCSync"
-$ServerFolder = Join-Path $ProjectRoot "test-server"
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ServerFolder = Join-Path $ProjectRoot $Config.server_dir
 
-$MinecraftVersion = "1.21.1"
-$NeoForgeVersion = "21.1.252"
+$MinecraftVersion = $Config.minecraft_version
+$NeoForgeVersion = $Config.neo_forge_version
 
 $InstallerName = "neoforge-$NeoForgeVersion-installer.jar"
-$InstallerUrl = "https://maven.neoforged.net/releases/net/neoforged/neoforge/$NeoForgeVersion/$InstallerName"
+$InstallerUrl = "$Config.installer_base_url/$NeoForgeVersion/$InstallerName"
 
 # ==========================================
 # Find Java 21
