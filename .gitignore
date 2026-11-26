@@ -29,3 +29,7 @@ MCSyncData/
 Thumbs.db
 .vscode/
 .idea/
+
+local-*
+
+*.zip
