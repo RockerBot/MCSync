@@ -5,6 +5,8 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+import json
+
 from mcsync.config import MCSyncConfig
 from mcsync.snapshots import (
     SnapshotError,
@@ -70,6 +72,7 @@ class SnapshotTests(unittest.TestCase):
             snapshot,
             expected_world_id="MCSyncTest",
         )
+        print('Outer test metadata: ', json.dumps(metadata, indent=2))
 
         self.assertEqual(metadata["generation"], 1)
         self.assertIsNone(metadata["parent_generation"])

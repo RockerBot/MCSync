@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import json
+
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +12,6 @@ from pathlib import Path
 from mcsync.server import ServerError, ServerManager
 from mcsync.snapshots import create_snapshot, verify_snapshot
 from mcsync.replication import publish_snapshot
-
 
 class CheckpointError(RuntimeError):
     """Raised when a checkpoint cannot be completed safely."""
@@ -126,16 +127,21 @@ def create_checkpoint(
     print("Minecraft has stopped. Creating snapshot...")
 
     try:
+        # print(f'Creating snapshot (calling {create_snapshot} in {create_snapshot.__code__.co_filename})...')
+        print(f'Creating snapshot (calling {create_snapshot})...')
         snapshot_directory = create_snapshot(
             manager.config,
             created_by=created_by,
             clean_shutdown=True,
         )
+        print('Created snapshot. Verifying...')
 
         verification = verify_snapshot(
             snapshot_directory,
             expected_world_id=manager.config.world_id,
         )
+
+        print('Verified snapshot. Metadata:', verification)
 
         if not verification:
             raise CheckpointError(
@@ -143,6 +149,8 @@ def create_checkpoint(
             )
 
     except Exception as snapshot_error:
+        print('There was an error creating the snapshot:', snapshot_error)
+
         if restart:
             print("Snapshot failed. Attempting to restart Minecraft...")
             try:

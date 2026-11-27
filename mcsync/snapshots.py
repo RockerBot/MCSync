@@ -203,7 +203,7 @@ def verify_snapshot(
 
         if _sha256_file(file_path) != str(expected_hash).upper():
             raise SnapshotError(f"SHA-256 mismatch: {entry['path']}")
-    
+
     actual_paths = {
         path.relative_to(world_copy).as_posix().casefold()
         for path in world_copy.rglob("*")
@@ -268,6 +268,7 @@ def create_snapshot(
     if not created_by or not created_by.strip():
         raise SnapshotError("created_by cannot be empty")
 
+    print('Validating config...')
     config.validate()
 
     source = config.world_directory.resolve()
@@ -275,6 +276,8 @@ def create_snapshot(
 
     if not source.is_dir():
         raise SnapshotError(f"World directory does not exist: {source}")
+
+    print('Found source dir:', source)
 
     if (
         snapshots_directory == source
@@ -290,6 +293,8 @@ def create_snapshot(
             raise SnapshotError(
                 f"World contains a symbolic link: {path}"
             )
+
+    print('Not a symlink. All verified. Creating directory:', snapshots_directory)
 
     snapshots_directory.mkdir(parents=True, exist_ok=True)
 
@@ -310,14 +315,18 @@ def create_snapshot(
             f"Refusing to overwrite existing snapshot: {final_directory}"
         )
 
+    print('Will write to:', final_directory)
+
     staging_directory = snapshots_directory / (
         f".staging-{generation_name}-{uuid.uuid4().hex}"
     )
+    print('Staging dir:', staging_directory)
 
     try:
         world_copy = staging_directory / "world" / config.world_id
         world_copy.parent.mkdir(parents=True)
 
+        print(f'Copying {source!r} into {world_copy!r}')
         shutil.copytree(source, world_copy)
 
         manifest = _build_manifest(world_copy)
@@ -350,9 +359,14 @@ def create_snapshot(
         )
 
         verify_snapshot(staging_directory, config.world_id)
+        print('Verified snapshot. Promoting staged snapshot...')
+
+        print('Metadata:', json.dumps(metadata, indent=2))
 
         # Same-filesystem rename: publish only after verification succeeds.
         staging_directory.rename(final_directory)
+        print(f'Renamed {staging_directory!r} to {final_directory!r}')
+
 
         return final_directory
 

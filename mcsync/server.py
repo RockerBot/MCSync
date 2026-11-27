@@ -14,6 +14,13 @@ from mcsync.ownership import OwnershipLock
 from mcsync.config import MCSyncConfig
 
 
+def log_call(f):
+    def inner(*args, **kwargs):
+        out = f(*args, **kwargs)
+        print('Called', f.__qualname__, '->', out)
+        return out
+    return inner
+
 class ServerError(RuntimeError):
     """Raised when a server operation cannot be completed."""
 
@@ -93,6 +100,7 @@ class ManagedServer:
             return
 
         self.send_command("stop")
+        # self.send_command(".")  # Hack to bypass the automatically inserted "pause" command from the neoforge installer.
 
         try:
             self.process.wait(timeout=timeout)
@@ -133,6 +141,7 @@ class ServerManager:
 
         self.ownership_lock = OwnershipLock(lock_path)
 
+    @log_call
     def status(self) -> dict:
         """Return the status of the process owned by this manager."""
 
@@ -220,6 +229,7 @@ class ServerManager:
 
         return [str(script), *configured[1:]]
 
+    @log_call
     def start(self) -> ManagedServer:
         """Start Minecraft while holding exclusive local ownership."""
 
@@ -292,6 +302,7 @@ class ServerManager:
 
         self.server.send_command(command)
 
+    @log_call
     def stop(
         self,
         timeout: float = 120,
