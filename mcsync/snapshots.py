@@ -250,6 +250,12 @@ def _existing_generations(snapshots_directory: Path) -> list[tuple[int, Path]]:
 
     return sorted(generations)
 
+def _copytree_ignore(source, config):
+    def inner(path, names):
+        path = Path(path)
+        # print(f'SNAPSHOT_EXCLUSION {path == source}: {source!r} against {path!r}')
+        return config.snapshot_exclusion_files * (path == source)  # TODO: Allow files at any depth.
+    return inner
 
 def create_snapshot(
     config: MCSyncConfig,
@@ -327,7 +333,10 @@ def create_snapshot(
         world_copy.parent.mkdir(parents=True)
 
         print(f'Copying {source!r} into {world_copy!r}')
-        shutil.copytree(source, world_copy)
+        shutil.copytree(
+            source, world_copy,
+            ignore=_copytree_ignore(source, config)
+        )
 
         manifest = _build_manifest(world_copy)
         manifest_bytes = _json_bytes(manifest)

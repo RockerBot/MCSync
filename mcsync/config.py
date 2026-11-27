@@ -26,6 +26,7 @@ class MCSyncConfig:
 
     java_executable: Path
     server_start_command: tuple[str, ...]
+    snapshot_exclusion_files: tuple[str, ...]
 
     minecraft_version: str
     loader: str
@@ -156,6 +157,7 @@ class MCSyncConfig:
             server_directory=resolve_path(data["server_directory"]),
             world_directory=resolve_path(data["world_directory"]),
             snapshots_directory=resolve_path(data["snapshots_directory"]),
+            snapshot_exclusion_files=data["snapshot_exclusion_files"],  # Currently only works for files in server dir root. TODO: Process any path.
             replication_directory=replication_directory,
             incoming_directory=incoming_directory,
             runtime_directory=runtime_directory,
