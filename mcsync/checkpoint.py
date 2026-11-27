@@ -12,6 +12,7 @@ from pathlib import Path
 from mcsync.server import ServerError, ServerManager
 from mcsync.snapshots import create_snapshot, verify_snapshot
 from mcsync.replication import publish_snapshot
+from mcsync.control_api import request_local_control
 
 class CheckpointError(RuntimeError):
     """Raised when a checkpoint cannot be completed safely."""
@@ -21,7 +22,7 @@ class CheckpointError(RuntimeError):
 class CheckpointResult:
     snapshot_directory: Path
     generation: int
-    restarted: bool
+    # restarted: bool
     replica_directory: Path | None = None
     replication_error: str | None = None
 
@@ -48,7 +49,8 @@ def _wait_for_save_confirmation(
         try:
             with log_path.open("rb") as log_file:
                 log_file.seek(log_offset)
-                new_text = log_file.read().decode(
+                new_bytes = log_file.read()
+                new_text = new_bytes.decode(
                     "utf-8",
                     errors="replace",
                 )
@@ -60,6 +62,46 @@ def _wait_for_save_confirmation(
         if "Saved the game" in new_text:
             return
 
+        log_offset += len(new_bytes)
+        time.sleep(1)
+
+    raise CheckpointError(
+        f"Minecraft did not confirm the save within {timeout} seconds. "
+        "The server has been left running; no snapshot was created."
+    )
+
+def wait_for_remote_save(config, token, log_path, log_offset, timeout):
+    print('Waiting for minecraft server to save...')
+
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+
+        server_status = request_local_control(
+            port=config.control_port,
+            token=token,
+            action='status'
+        )
+        if server_status['state'] != 'RUNNING':
+            print('Minecraft server already ended. Not waiting for save.')
+
+        try:
+            with log_path.open("rb") as log_file:
+                log_file.seek(log_offset)
+                new_bytes = log_file.read()
+                new_text = new_bytes.decode(
+                    "utf-8",
+                    errors="replace",
+                )
+        except OSError as exc:
+            raise CheckpointError(
+                f"Could not read the Minecraft log: {exc}"
+            ) from exc
+
+        if "Saved the game" in new_text:
+            return
+
+        log_offset += len(new_bytes)
         time.sleep(1)
 
     raise CheckpointError(
@@ -69,68 +111,69 @@ def _wait_for_save_confirmation(
 
 
 def create_checkpoint(
-    manager: ServerManager,
+    config,
+    # manager: ServerManager,
     *,
     created_by: str,
-    restart: bool = True,
-    save_timeout: float = 120,
-    stop_timeout: float = 180,
+    # restart: bool = True,
+    # save_timeout: float = 120,
+    # stop_timeout: float = 180,
 ) -> CheckpointResult:
     """Stop Minecraft cleanly, snapshot its world, and optionally restart."""
 
     if not created_by.strip():
         raise ValueError("created_by cannot be empty")
 
-    if save_timeout <= 0 or stop_timeout <= 0:
-        raise ValueError("Timeouts must be greater than zero")
+    # if save_timeout <= 0:  # or stop_timeout <= 0:
+    #     raise ValueError("Timeouts must be greater than zero")
 
-    server = manager.server
+    # server = manager.server
 
-    if server is None or not server.is_running:
-        raise CheckpointError(
-            "MCSync does not currently own a running Minecraft server."
-        )
+    # if server is None or not server.is_running:
+    #     raise CheckpointError(
+    #         "MCSync does not currently own a running Minecraft server."
+    #     )
 
-    log_path = server.log_path
+    # log_path = server.log_path
 
-    try:
-        log_offset = log_path.stat().st_size
-    except OSError as exc:
-        raise CheckpointError(
-            f"Could not inspect the Minecraft log: {exc}"
-        ) from exc
+    # try:
+    #     log_offset = log_path.stat().st_size
+    # except OSError as exc:
+    #     raise CheckpointError(
+    #         f"Could not inspect the Minecraft log: {exc}"
+    #     ) from exc
 
-    print("Sending save-all flush...")
-    manager.send_command("save-all flush")
+    # print("Sending save-all flush...")
+    # manager.send_command("save-all flush")
 
-    print("Waiting for Minecraft to confirm the save...")
-    _wait_for_save_confirmation(
-        manager,
-        log_path,
-        log_offset,
-        save_timeout,
-    )
+    # print("Waiting for Minecraft to confirm the save...")
+    # _wait_for_save_confirmation(
+    #     manager,
+    #     log_path,
+    #     log_offset,
+    #     save_timeout,
+    # )
 
-    print("Save confirmed. Requesting graceful shutdown...")
-    try:
-        manager.stop(
-            timeout=stop_timeout,
-            release_ownership=False,
-        )
-    except ServerError as exc:
-        raise CheckpointError(
-            "Minecraft did not shut down cleanly. "
-            "No snapshot was created and no second server was started. "
-            f"Details: {exc}"
-        ) from exc
+    # print("Save confirmed. Requesting graceful shutdown...")
+    # try:
+    #     manager.stop(
+    #         timeout=stop_timeout,
+    #         release_ownership=False,
+    #     )
+    # except ServerError as exc:
+    #     raise CheckpointError(
+    #         "Minecraft did not shut down cleanly. "
+    #         "No snapshot was created and no second server was started. "
+    #         f"Details: {exc}"
+    #     ) from exc
 
-    print("Minecraft has stopped. Creating snapshot...")
+    # print("Minecraft has stopped. Creating snapshot...")
 
     try:
         # print(f'Creating snapshot (calling {create_snapshot} in {create_snapshot.__code__.co_filename})...')
         print(f'Creating snapshot (calling {create_snapshot})...')
         snapshot_directory = create_snapshot(
-            manager.config,
+            config,
             created_by=created_by,
             clean_shutdown=True,
         )
@@ -138,10 +181,10 @@ def create_checkpoint(
 
         verification = verify_snapshot(
             snapshot_directory,
-            expected_world_id=manager.config.world_id,
+            expected_world_id=config.world_id,
         )
 
-        print('Verified snapshot. Metadata:', verification)
+        print('Verification completed. Metadata:', verification)
 
         if not verification:
             raise CheckpointError(
@@ -149,20 +192,20 @@ def create_checkpoint(
             )
 
     except Exception as snapshot_error:
-        print('There was an error creating the snapshot:', snapshot_error)
+        print(f'There was an error creating the snapshot: {snapshot_error!r}')
 
-        if restart:
-            print("Snapshot failed. Attempting to restart Minecraft...")
-            try:
-                manager.start()
-            except Exception as restart_error:
-                raise CheckpointError(
-                    "Snapshot creation failed, and Minecraft could not "
-                    f"be restarted: {restart_error}. "
-                    "Ownership has been retained for safety."
-                ) from snapshot_error
-        else:
-            manager.release_ownership()
+        # if restart:
+        #     print("Snapshot failed. Attempting to restart Minecraft...")
+        #     try:
+        #         manager.start()
+        #     except Exception as restart_error:
+        #         raise CheckpointError(
+        #             "Snapshot creation failed, and Minecraft could not "
+        #             f"be restarted: {restart_error}. "
+        #             "Ownership has been retained for safety."
+        #         ) from snapshot_error
+        # else:
+        #     manager.release_ownership()
 
         raise CheckpointError(
             f"Snapshot creation or verification failed: {snapshot_error}"
@@ -177,8 +220,8 @@ def create_checkpoint(
     try:
         replica_directory = publish_snapshot(
             snapshot_directory,
-            manager.config.replication_directory,
-            expected_world_id=manager.config.world_id,
+            config.replication_directory,
+            expected_world_id=config.world_id,
         )
 
         print(f"Replica published: {replica_directory}")
@@ -193,19 +236,19 @@ def create_checkpoint(
 
     generation = int(snapshot_directory.name.split("-")[-1])
 
-    restarted = False
+    # restarted = False
 
-    if restart:
-        print("Snapshot verified. Restarting Minecraft...")
-        manager.start()
-        restarted = True
-    else:
-        manager.release_ownership()
+    # if restart:
+    #     print("Snapshot verified. Restarting Minecraft...")
+    #     manager.start()
+    #     restarted = True
+    # else:
+    #     manager.release_ownership()
 
     return CheckpointResult(
         snapshot_directory=snapshot_directory,
         generation=generation,
-        restarted=restarted,
+        # restarted=restarted,
         replica_directory=replica_directory,
         replication_error=replication_error,
     )

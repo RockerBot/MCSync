@@ -8,7 +8,7 @@ from pathlib import Path
 
 from mcsync.config import MCSyncConfig
 from mcsync.server import ServerManager, ServerError
-from mcsync.checkpoint import create_checkpoint
+from mcsync.checkpoint import create_checkpoint, wait_for_remote_save, CheckpointError
 from mcsync.peer_monitor import inspect_all_peers
 from mcsync.peer_api import PeerAPIError
 from mcsync.control_api import (
@@ -160,20 +160,34 @@ def snapshot_handler(args, config):
         print_generations("Local Snapshots", snapshots)
 
     elif args.subcommand == 'create':
+        try:
+            server_status = send_local_command(config, 'status')
+        except LocalManagerUnavailable as e:
+            server_status = {'state': 'STOPPED'}
 
+        if server_status['state'] == 'RUNNING':
+            log_path = Path(server_status['log_file'])
 
-        result = create_checkpoint(
-            manager,
-            created_by=config.peer_id,
-            restart=True,
-            save_timeout=120,
-            stop_timeout=180,
-        )
+            try:
+                log_offset = log_path.stat().st_size
+            except OSError as exc:
+                raise CheckpointError(
+                    f"Could not inspect the Minecraft log: {exc}"
+                ) from exc
+
+            send_local_command(config, 'save')
+            token = load_local_control_token(config.secrets_file)
+            wait_for_remote_save(config, token, log_path, log_offset, timeout=180)
+
+        result = create_checkpoint(config, created_by=config.peer_id)
 
         print("\nCHECKPOINT SUCCESSFUL")
         print(f"Generation: {result.generation}")
         print(f"Snapshot: {result.snapshot_directory}")
-        print(f"Restarted: {result.restarted}")
+        print(f"Replica: {result.replica_directory}")
+        if result.replication_error is not None:
+            print(f"Replication error: {result.replication_error}")
+        # print(f"Restarted: {result.restarted}")
 
 
     elif args.subcommand == 'import':
