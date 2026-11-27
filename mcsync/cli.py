@@ -8,6 +8,7 @@ from pathlib import Path
 
 from mcsync.config import MCSyncConfig
 from mcsync.server import ServerManager, ServerError
+from mcsync.checkpoint import create_checkpoint
 from mcsync.peer_monitor import inspect_all_peers
 from mcsync.peer_api import PeerAPIError
 from mcsync.control_api import (
@@ -109,8 +110,143 @@ def send_local_command(config, action):
         action=action,
     )
 
+def server_handler(args, config):
+    if args.subcommand == 'start':
+        manager = ServerManager(config)
+        host_manager = HostManager(manager)
+
+        print("Starting persistent MCSync HostManager...")
+        print("The manager will remain running until Minecraft is stopped.")
+        print("Use another terminal to run status, save, or stop.")
+        print("Press Ctrl+C to request a graceful shutdown.\n")
+
+        host_manager.run()
+
+        print("MCSync HostManager stopped.")
+
+    elif args.subcommand == 'status':
+        try:
+            result = send_local_command(config, "status")
+            result["manager_state"] = "MANAGER_RUNNING"
+        except LocalManagerUnavailable:
+            result = {
+                "manager_state": "MANAGER_STOPPED",
+                "minecraft_state": "UNKNOWN",
+                "message": (
+                    "The local HostManager is not running. "
+                    "Minecraft state cannot be confirmed."
+                ),
+            }
+
+        print(json.dumps(result, indent=2))
+
+    elif args.subcommand == 'stop':
+        result = send_local_command(config, "stop")
+        print(json.dumps(result, indent=2))
+        print("Graceful shutdown requested.")
+
+    elif args.subcommand == 'save':
+        result = send_local_command(config, "save")
+        print(json.dumps(result, indent=2))
+        print("Save command sent.")
+
+
+def snapshot_handler(args, config):
+    if args.subcommand == 'list':
+        snapshots = list_snapshots(
+            config.snapshots_directory,
+            expected_world_id=config.world_id,
+        )
+        print_generations("Local Snapshots", snapshots)
+
+    elif args.subcommand == 'create':
+
+
+        result = create_checkpoint(
+            manager,
+            created_by=config.peer_id,
+            restart=True,
+            save_timeout=120,
+            stop_timeout=180,
+        )
+
+        print("\nCHECKPOINT SUCCESSFUL")
+        print(f"Generation: {result.generation}")
+        print(f"Snapshot: {result.snapshot_directory}")
+        print(f"Restarted: {result.restarted}")
+
+
+    elif args.subcommand == 'import':
+        results = import_incoming_snapshots(
+            config.incoming_directory,
+            config.replication_directory,
+            expected_world_id=config.world_id,
+        )
+
+        print("\nIncoming Snapshot Import")
+        print("========================")
+
+        if not results:
+            print("No incoming generation folders found.")
+        else:
+            for result in results:
+                print()
+                print(f"Generation: {result['generation']}")
+                print(f"Status:     {result['status']}")
+
+                if result["path"] is not None:
+                    print(f"Path:       {result['path']}")
+
+                if result["error"]:
+                    print(f"Error:      {result['error']}")
+
+            imported = sum(
+                result["status"] == "IMPORTED"
+                for result in results
+            )
+            already_present = sum(
+                result["status"] == "ALREADY_PRESENT"
+                for result in results
+            )
+            rejected = sum(
+                result["status"] == "REJECTED"
+                for result in results
+            )
+
+            print("\nImport Summary")
+            print("--------------")
+            print(f"Imported:        {imported}")
+            print(f"Already present: {already_present}")
+            print(f"Rejected:        {rejected}")
+
+def replica_handler(args, config):
+    if args.subcommand == 'list':
+        replicas = list_verified_replicas(
+            config.replication_directory,
+            expected_world_id=config.world_id,
+        )
+        print_generations("Verified Replicas", replicas)
+
+
+def peer_handler(args, config):
+    if args.subcommand == 'list':
+        manager = ServerManager(config)
+        results = inspect_all_peers(manager)
+        print_peer_health(results)
 
 def main():
+    '''
+    cli server start
+    cli server stop
+    cli server save
+    cli server status
+    cli snapshot [list]
+    cli snapshot import
+    cli snapshot create
+    cli replica [list]
+    cli peer [list]
+    '''
+
     parser = argparse.ArgumentParser(
         description="MCSync Minecraft host manager"
     )
@@ -122,125 +258,29 @@ def main():
         help="Path to local MCSync configuration",
     )
 
-    parser.add_argument(
-        "command",
-        choices=[
-            "start",
-            "status",
-            "stop",
-            "save",
-            "peers",
-            "snapshots",
-            "replicas",
-            "import",
-        ],
-        help="Command to execute",
-    )
+    subparsers = parser.add_subparsers()
+
+    snapshot_parser = subparsers.add_parser("snapshot", description='Snapshot related commands. Defaults to listing all snapshots.')
+    snapshot_parser.add_argument('subcommand', choices = ['list', 'import', 'create'], default='list', nargs='?')
+    snapshot_parser.set_defaults(run=snapshot_handler)
+
+    start_parser = subparsers.add_parser("server", description='Commands for interacting with the minecraft server process. Defaults to showing its current status.')
+    start_parser.add_argument('subcommand', choices = ['start', 'status', 'stop', 'save'], default='status', nargs='?')
+    start_parser.set_defaults(run=server_handler)
+
+    replica_parser = subparsers.add_parser("replica", description='Replica related commands. Defaults to listing all replicas.')
+    replica_parser.add_argument('subcommand', choices = ['list'], default='list', nargs='?')
+    replica_parser.set_defaults(run=replica_handler)
+
+    peer_parser = subparsers.add_parser("peer", description='Peer related commands. Defaults to listing all peers.')
+    peer_parser.add_argument('subcommand', choices = ['list'], default='list', nargs='?')
+    peer_parser.set_defaults(run=peer_handler)
 
     args = parser.parse_args()
 
     try:
         config = MCSyncConfig.from_file(args.config)
-
-        if args.command == "start":
-            manager = ServerManager(config)
-            host_manager = HostManager(manager)
-
-            print("Starting persistent MCSync HostManager...")
-            print("The manager will remain running until Minecraft is stopped.")
-            print("Use another terminal to run status, save, or stop.")
-            print("Press Ctrl+C to request a graceful shutdown.\n")
-
-            host_manager.run()
-
-            print("MCSync HostManager stopped.")
-        elif args.command == "status":
-            try:
-                result = send_local_command(config, "status")
-                result["manager_state"] = "MANAGER_RUNNING"
-            except LocalManagerUnavailable:
-                result = {
-                    "manager_state": "MANAGER_STOPPED",
-                    "minecraft_state": "UNKNOWN",
-                    "message": (
-                        "The local HostManager is not running. "
-                        "Minecraft state cannot be confirmed."
-                    ),
-                }
-
-            print(json.dumps(result, indent=2))
-
-        elif args.command == "stop":
-            result = send_local_command(config, "stop")
-            print(json.dumps(result, indent=2))
-            print("Graceful shutdown requested.")
-
-        elif args.command == "save":
-            result = send_local_command(config, "save")
-            print(json.dumps(result, indent=2))
-            print("Save command sent.")
-
-        elif args.command == "peers":
-            manager = ServerManager(config)
-            results = inspect_all_peers(manager)
-            print_peer_health(results)
-
-        elif args.command == "snapshots":
-            snapshots = list_snapshots(
-                config.snapshots_directory,
-                expected_world_id=config.world_id,
-            )
-            print_generations("Local Snapshots", snapshots)
-
-        elif args.command == "replicas":
-            replicas = list_verified_replicas(
-                config.replication_directory,
-                expected_world_id=config.world_id,
-            )
-            print_generations("Verified Replicas", replicas)
-
-        elif args.command == "import":
-            results = import_incoming_snapshots(
-                config.incoming_directory,
-                config.replication_directory,
-                expected_world_id=config.world_id,
-            )
-
-            print("\nIncoming Snapshot Import")
-            print("========================")
-
-            if not results:
-                print("No incoming generation folders found.")
-            else:
-                for result in results:
-                    print()
-                    print(f"Generation: {result['generation']}")
-                    print(f"Status:     {result['status']}")
-
-                    if result["path"] is not None:
-                        print(f"Path:       {result['path']}")
-
-                    if result["error"]:
-                        print(f"Error:      {result['error']}")
-
-                imported = sum(
-                    result["status"] == "IMPORTED"
-                    for result in results
-                )
-                already_present = sum(
-                    result["status"] == "ALREADY_PRESENT"
-                    for result in results
-                )
-                rejected = sum(
-                    result["status"] == "REJECTED"
-                    for result in results
-                )
-
-                print("\nImport Summary")
-                print("--------------")
-                print(f"Imported:        {imported}")
-                print(f"Already present: {already_present}")
-                print(f"Rejected:        {rejected}")
+        args.run(args, config)
 
     except (
         ServerError,

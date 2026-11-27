@@ -7,9 +7,13 @@ Start the server with sync handling
 python -m mcsync.cli server start
 ```
 
-For usage
+For usage info
 ```sh
 python -m mcsync.cli --help
+python -m mcsync.cli server --help
+python -m mcsync.cli snapshot --help
+python -m mcsync.cli replica --help
+python -m mcsync.cli peer --help
 ```
 
 ## Test Commands (all from repo root)
