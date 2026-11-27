@@ -49,12 +49,12 @@ python -m unittest tests.test_snapshots.SnapshotTests.test_create_and_verify_sna
 
 (We'll move to GitHub issues only if it's REALLY needed)
 
-- [x] Snapshots aren't getting created
-	They get created through scripts/test_checkpoint.py
-- [x] Checkpoint unit tests don't call the actual snapshot creation functions. They only mock them (even though the actual function is imported)
-	It doesn't get called because there's a @patch on the unit test for that function.
+- [x] Snapshots aren't getting created\
+	_They get created through scripts/test_checkpoint.py_
+- [x] Checkpoint unit tests don't call the actual snapshot creation functions. They only mock them (even though the actual function is imported)\
+	_It doesn't get called because there's a @patch on the unit test for that function._
 - [ ] Snapshots don't get created during cli start at regular intervals
 - [ ] There is no manual snapshot creation command in the cli
 - [ ] Creating a snapshot invokes a stop server command
-- [ ] `run.bat` ends the java server but not the batch process on graceful shutdown
-	This works sometimes, but now it isn't working after `cli server start`. (Press ctrl+pause/break in this case to exit)
+- [ ] `run.bat` ends the java server but not the batch process on graceful shutdown\
+  _This works sometimes, but now it isn't working after `cli server start`. (Press ctrl+pause/break in this case to exit)_
